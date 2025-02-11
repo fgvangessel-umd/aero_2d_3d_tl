@@ -125,7 +125,7 @@ trained_model_fname = 'trained_model.pt'
 num_epochs = 100
 for epoch in range(num_epochs):
     train_loss = train_epoch(model, dataloaders['train'], optimizer, criterion, device, scaler.scalers)
-    print(f'Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}')
+    print(f'Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.3e}')
 
 checkpoint = {
         'model_state_dict': model.state_dict(),
