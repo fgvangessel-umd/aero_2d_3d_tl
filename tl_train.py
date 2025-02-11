@@ -114,29 +114,29 @@ config = ModelConfig()
 # Initialize model, optimizer, and criterion
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = AirfoilTransformerModel(config).to(device)
-#optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 criterion = torch.nn.MSELoss()
 
-'''
+# Save path for model checkpointing
+checkpoint_folder = 'trained_model/'
+trained_model_fname = 'trained_model.pt'
+
 # Training loop
-num_epochs = 1500
+num_epochs = 100
 for epoch in range(num_epochs):
-    train_loss = train_epoch(model, dataloaders['train'], optimizer, criterion, device)
+    train_loss = train_epoch(model, dataloaders['train'], optimizer, criterion, device, scaler.scalers)
     print(f'Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.6f}')
 
 checkpoint = {
         'model_state_dict': model.state_dict(),
         'scaler': scaler.scalers  # Save scaler state
     }
-save_path = 'trained_model.pt'
+save_path = checkpoint_folder+trained_model_fname
 torch.save(checkpoint, save_path)
 print(f"Model saved to {save_path}")
-'''
 
 # Load your trained model
-checkpoint_folder = 'trained_model/'
-trained_model_fname = 'trained_model.pt'
-checkpoint = torch.load(checkpoint_folder+trained_model_fname)
+checkpoint = torch.load(save_path)
 model.load_state_dict(checkpoint['model_state_dict'])
 #scaler = AirfoilDataScaler()
 #scaler.scalers = checkpoint['scaler']
