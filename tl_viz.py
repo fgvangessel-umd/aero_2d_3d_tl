@@ -5,7 +5,7 @@ from matplotlib.gridspec import GridSpec
 from tl_model import AirfoilTransformerModel
 from tl_data import create_dataloaders, AirfoilDataScaler
 
-def visualize_predictions(model, dataloader, scaler, device, num_samples=5, save_path='predictions'):
+def visualize_predictions(model, dataloader, scaler, device, num_samples=1, save_path='predictions'):
     """
     Visualize model predictions against ground truth
     
@@ -117,6 +117,7 @@ def visualize_predictions(model, dataloader, scaler, device, num_samples=5, save
             plt.savefig(f'{save_path}/case_{case_ids[i].item()}_z_{z_coord[i].item():.3f}.png')
             plt.close()
 
+'''
 def evaluate_model_performance(model, dataloader, scaler, device):
     """
     Evaluate model performance metrics
@@ -220,3 +221,4 @@ if __name__ == "__main__":
     print(f"MAE: {metrics['mae']:.6f}")
     print(f"Error Std: {metrics['error_std']:.6f}")
     print(f"Error Percentiles (25, 50, 75): {metrics['error_percentiles']}")
+'''
