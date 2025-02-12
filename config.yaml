@@ -8,7 +8,7 @@ dropout: 0.1
 # Training parameters
 batch_size: 64
 learning_rate: 1.0e-4
-num_epochs: 50
+num_epochs: 5
 weight_decay: 1.0e-6
 scheduler_type: cosine
 warmup_steps: 1000

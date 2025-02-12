@@ -78,6 +78,10 @@ class ExperimentManager:
     def create_prediction_visualization(self, model, batch, device, num_samples, scaler):
         """Create visualization of model predictions"""
         with torch.no_grad():
+
+            # Scale batch
+            batch = scaler.transform(batch)
+
             # Move data to device
             airfoil_2d = batch['airfoil_2d'].to(device)
             geometry_3d = batch['geometry_3d'].to(device)
