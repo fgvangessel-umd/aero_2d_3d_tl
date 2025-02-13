@@ -112,8 +112,6 @@ class ModelTrainer:
     def train(self):
         """Main training loop"""
         best_val_loss = float('inf')
-
-        print(self.config.num_epochs)
         
         for epoch in range(self.config.num_epochs):
             self.logger.info(f"Starting epoch {epoch}")
@@ -179,6 +177,18 @@ class ModelTrainer:
                     self.scaler,
                     self.global_step
                 )
+
+        # Generate visualizations for last epoch (in the future exchange this for loading the best epoch)
+        if epoch % self.config.viz_freq == 0 and self.experiment:
+            self.experiment.log_model_predictions(
+                self.model,
+                self.dataloaders['val'],
+                self.device,
+                epoch,
+                self.config.num_output_figs,
+                self.scaler,
+                self.global_step
+            )
                 
         self.logger.info("Training completed")
 
