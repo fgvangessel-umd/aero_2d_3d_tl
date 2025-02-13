@@ -17,12 +17,15 @@ class TrainingConfig:
     # Training parameters
     batch_size: int = 64
     learning_rate: float = 1e-4
-    num_epochs: int = 100
+    num_epochs: int = 1
     weight_decay: float = 0.0
     scheduler_type: str = 'cosine'
     warmup_steps: int = 1000
     checkpoint_freq: int = 10
     num_output_figs: int = 4
+    validation_freq: int = 1  # Validate every epoch
+    test_freq: int = 10      # Test every 5 epochs
+    viz_freq: int = 10      # Visualize every 5 epochs
     
     # Data parameters
     data_path: str = 'data'

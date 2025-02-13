@@ -43,9 +43,9 @@ class ExperimentManager:
         """Log training metrics for each batch"""
         wandb.log(metrics, step=step)
         
-    def log_epoch_metrics(self, metrics, epoch):
+    def log_epoch_metrics(self, metrics, step):
         """Log metrics for each epoch"""
-        metrics['epoch'] = epoch
+        metrics['step'] = step
         wandb.log(metrics)
         
         # Save metrics to local file
@@ -53,7 +53,7 @@ class ExperimentManager:
         with open(metrics_file, "a") as f:
             f.write(json.dumps(metrics) + "\n")
             
-    def log_model_predictions(self, model, dataloader, device, epoch, num_samples, scaler):
+    def log_model_predictions(self, model, dataloader, device, epoch, num_samples, scaler, global_step):
         """Generate and log model prediction visualizations"""
         model.eval()
         
@@ -68,7 +68,8 @@ class ExperimentManager:
                 wandb.log({
                     "predictions": wandb.Image(fig),
                     "epoch": epoch,
-                    "batch": batch_idx
+                    "batch": batch_idx,
+                    "step": global_step
                 })
             
                 # Save locally
