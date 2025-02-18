@@ -119,7 +119,7 @@ class ModelTrainer:
             # Train for one epoch
             train_loss = self.train_epoch(epoch)
             
-            # Periodic validation
+            # Periodic validation/Test
             metrics = {}
             if epoch % self.config.validation_freq == 0:
                 # Validation set evaluation
@@ -130,27 +130,39 @@ class ModelTrainer:
                         'val/rmse': val_metrics.rmse,
                         'val/mae': val_metrics.mae
                     })
-                    
-                    # Save best model
-                    if val_metrics.mse < best_val_loss:
-                        best_val_loss = val_metrics.mse
-                        if self.experiment:
-                            self.experiment.save_checkpoint(
-                                self.model,
-                                self.optimizer,
-                                epoch,
-                                metrics,
-                            )
+
+                # Save best model
+                if val_metrics.mse < best_val_loss:
+                    best_val_loss = val_metrics.mse
+                    if self.experiment:
+                        self.experiment.save_checkpoint(
+                            self.model,
+                            self.optimizer,
+                            epoch,
+                            metrics,
+                            self.scaler
+                        )
+
+                # Record training metrics
+                train_metrics = self.run_validation(epoch, 'train')
+                if train_metrics:
+                    metrics.update({
+                        'train/loss': train_metrics.mse,
+                        'train/rmse': train_metrics.rmse,
+                        'train/mae': train_metrics.mae
+                    })
                 
-                # Test set evaluation if specified
-                if hasattr(self.config, 'test_freq') and epoch % self.config.test_freq == 0:
-                    test_metrics = self.run_validation(epoch, 'test')
-                    if test_metrics:
-                        metrics.update({
-                            'test/loss': test_metrics.mse,
-                            'test/rmse': test_metrics.rmse,
-                            'test/mae': test_metrics.mae
-                        })
+            # Test set evaluation if specified
+            if hasattr(self.config, 'test_freq') and epoch % self.config.test_freq == 0:
+                test_metrics = self.run_validation(epoch, 'test')
+                if test_metrics:
+                    metrics.update({
+                        'test/loss': test_metrics.mse,
+                        'test/rmse': test_metrics.rmse,
+                        'test/mae': test_metrics.mae
+                    })
+
+                
             
             # Log epoch metrics
             metrics.update({'train/loss': train_loss, 'epoch': epoch})
@@ -163,32 +175,22 @@ class ModelTrainer:
                     self.model,
                     self.optimizer,
                     epoch,
-                    metrics
+                    metrics,
+                    self.scaler
                 )
                 
             # Generate visualizations
-            if epoch % self.config.viz_freq == 0 and self.experiment:
+            if epoch > 0 and epoch % self.config.viz_freq == 0 and self.experiment:
                 self.experiment.log_model_predictions(
                     self.model,
+                    'val',
                     self.dataloaders['val'],
                     self.device,
                     epoch,
-                    self.config.num_output_figs,
+                    #self.config.num_output_figs,
                     self.scaler,
                     self.global_step
                 )
-
-        # Generate visualizations for last epoch (in the future exchange this for loading the best epoch)
-        if epoch % self.config.viz_freq == 0 and self.experiment:
-            self.experiment.log_model_predictions(
-                self.model,
-                self.dataloaders['val'],
-                self.device,
-                epoch,
-                self.config.num_output_figs,
-                self.scaler,
-                self.global_step
-            )
                 
         self.logger.info("Training completed")
 
@@ -210,11 +212,7 @@ def train_model(config_path: str):
     
     # Initialize or load scaler
     scaler = AirfoilDataScaler()
-    try:
-        scaler.load(config.scaler_fname)
-    except FileNotFoundError:
-        scaler.fit(dataloaders['train'])
-        scaler.save(config.scaler_fname)
+    scaler.fit(dataloaders['train'])
     
     # Initialize model and training components
     model = AirfoilTransformerModel(config).to(device)
@@ -249,6 +247,19 @@ def train_model(config_path: str):
     
     # Start training
     trainer.train()
+
+    # Generate visualizations for last epoch (in the future exchange this for loading the best epoch)
+    if experiment:
+        for split in ['train', 'val', 'test']:
+            experiment.log_model_predictions(
+                model,
+                split,
+                dataloaders[split],
+                device,
+                config.num_epochs,
+                scaler,
+                None
+            )
     
     # Cleanup
     if experiment:

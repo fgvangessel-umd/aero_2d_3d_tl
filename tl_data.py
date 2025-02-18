@@ -227,9 +227,9 @@ class AirfoilDataScaler:
         
         # Compute standard deviations
         stats['pressure_2d']['std'] = np.sqrt(sum_sq_pressure_2d / (n_samples * 200)).item()
-        stats['pressure_3d']['std'] = np.sqrt(sum_sq_pressure_2d / (n_samples * 200)).item()
+        stats['pressure_3d']['std'] = np.sqrt(sum_sq_pressure_3d / (n_samples * 200)).item()
         stats['coord_2d']['std'] = np.sqrt(sum_sq_coords_2d / (n_samples * 200)).item()
-        stats['coord_3d']['std'] = np.sqrt(sum_sq_coords_2d / (n_samples * 200)).item()
+        stats['coord_3d']['std'] = np.sqrt(sum_sq_coords_3d / (n_samples * 200)).item()
         stats['z_coord']['std'] = np.sqrt(sum_sq_z_coord / n_samples).item()
         stats['mach']['std'] = np.sqrt(sum_sq_mach / n_samples).item()
         stats['reynolds']['std'] = np.sqrt(sum_sq_reynolds / n_samples).item()

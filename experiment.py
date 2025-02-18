@@ -53,30 +53,23 @@ class ExperimentManager:
         with open(metrics_file, "a") as f:
             f.write(json.dumps(metrics) + "\n")
             
-    def log_model_predictions(self, model, dataloader, device, epoch, num_samples, scaler, global_step):
+    def log_model_predictions(self, model, split, dataloader, device, epoch, scaler, global_step):
         """Generate and log model prediction visualizations"""
         model.eval()
-        
         with torch.no_grad():
-
             for batch_idx, batch in enumerate(dataloader):
-
                 # Get predictions (using your existing visualization code)
-                fig = self.create_prediction_visualization(model, batch, device, num_samples, scaler)
+                fig = self.create_prediction_visualization(model, split, batch, device, scaler, epoch, batch_idx)
                 
                 # Log to W&B
-                wandb.log({
-                    "predictions": wandb.Image(fig),
-                    "epoch": epoch,
-                    "batch": batch_idx,
-                    "step": global_step
-                })
+                #wandb.log({
+                #    "predictions": wandb.Image(fig),
+                #    "epoch": epoch,
+                #    "batch": batch_idx,
+                #    "step": global_step
+                #})
             
-                # Save locally
-                fig.savefig(self.viz_dir / f"predictions_epoch_{epoch}_{batch_idx}.png")
-                plt.close(fig)
-            
-    def create_prediction_visualization(self, model, batch, device, num_samples, scaler):
+    def create_prediction_visualization(self, model, split, batch, device, scaler, epoch, batch_idx):
         """Create visualization of model predictions"""
         with torch.no_grad():
 
@@ -119,9 +112,19 @@ class ExperimentManager:
                 'mach': mach,
                 'reynolds': reynolds
             }
+
+            # Report unscaled Reynolds number
+            #true_reynolds = batch['reynolds'] * scaler.scalers['reynolds']['std'] + scaler.scalers['reynolds']['mean']
+            #print(batch['reynolds'][0].item()) 
+            #print(batch['reynolds'][0].item() * scaler.scalers['reynolds']['std'] + scaler.scalers['reynolds']['mean']) 
+            #print(scaler.scalers['reynolds']['std'])
+            #print(scaler.scalers['reynolds']['mean'])
+            #sys.exit('DEBUG')
+            #print(true_reynolds[0])
+            #print(f"Reynolds: {true_reynolds[0].item():.3e}")
             
             # Visualize random samples
-            for i in range(min(num_samples, len(case_ids))):
+            for i in range(len(batch)):
                 fig = plt.figure(figsize=(20, 15))
                 gs = GridSpec(2, 2, figure=fig)
                 
@@ -170,19 +173,35 @@ class ExperimentManager:
                 # Add case information
                 fig.suptitle(f'Case ID: {case_ids[i].item()}\n' + 
                             f'Mach: {mach[i].item():.3f}, ' +
-                            f'Reynolds: {batch_true["reynolds"][i].item():.2e}',
+                            f"Reynolds: {reynolds[i].item():.3e}",
                             fontsize=24)
+
+                # Save locally
+                fig.savefig(self.viz_dir / f"{split}_epoch_{epoch}_{batch_idx}_{i}.png")
+                plt.close(fig)
 
         return fig
     
-    def save_checkpoint(self, model, optimizer, epoch, metrics):
+    def save_checkpoint(self, model, optimizer, epoch, metrics, scaler):
+
+        # Create temporary path for scaler
+        scaler_path = self.model_dir / f"temp_scaler_epoch_{epoch}.pt"
+        
+        # Save scaler state
+        scaler.save(scaler_path)
+        
+        # Load scaler state as bytes to include in checkpoint
+        with open(scaler_path, 'rb') as f:
+            scaler_state = f.read()
+
         """Save model checkpoint with metadata"""
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'metrics': metrics,
-            'config': asdict(self.config)
+            'config': asdict(self.config),
+            'scaler_state': scaler_state
         }
         
         # Save locally
