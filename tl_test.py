@@ -12,10 +12,13 @@ import argparse
 import numpy as np
 from scipy import stats
 from typing import Tuple
+import sys
+from matplotlib import pyplot as plt
 
 def calculate_airfoil_forces(
     points: np.ndarray,
-    pressures: np.ndarray
+    pressures: np.ndarray,
+    alpha: float = 0.0
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Calculate nodal and total forces on an airfoil given discrete points and pressure values.
@@ -26,6 +29,8 @@ def calculate_airfoil_forces(
         Nx2 array of (x,y) coordinates along the airfoil surface
     pressures : np.ndarray
         Length N array of pressure values at each point
+    alpha : float
+        Angle of attack of airfoil
         
     Returns
     -------
@@ -67,6 +72,10 @@ def calculate_airfoil_forces(
     # Calculate segment forces
     # Force = pressure * length * normal_vector
     segment_forces = normal_vectors * segment_pressures[:, np.newaxis] * segment_lengths[:, np.newaxis]
+
+    # Define rotation array to transform from airfoil affixed coordinate system into free-stream coordinate system
+    R = np.array([[np.cos(alpha), np.sin(alpha)], [-np.sin(alpha), np.cos(alpha)]])
+    segment_forces = segment_forces @ R.T
     
     # Calculate total force by summing all segment forces
     total_force = np.sum(segment_forces, axis=0)
@@ -129,6 +138,10 @@ if __name__ == "__main__":
         test_cases = list(set(test_cases))
 
         case_ids = {'val': val_cases, 'test': test_cases}
+        true_lift = []
+        pred_lift = []
+        true_drag = []
+        pred_drag = []
 
         # Load data
         for split in ['test']:
@@ -184,48 +197,47 @@ if __name__ == "__main__":
                     fname = f'model_test/mach/predictions_{case_id}.png'
 
                     plot_3d_wing_predictions(xy_2d, xy_3d, p_2d, p_3d_true, p_3d_pred, z_coord, case_data, fname)
-                    print(f'Case ID: {case_id:>4}')
                     
-                    '''
                     # Calculate forces
-                    for i in range(x_3d.shape[0]):
-                        points = np.concatenate((x_3d[i,:].reshape((-1,1)), y_3d[i,:].reshape((-1,1))))
+                    wing_lift_pred, wing_drag_pred = 0.0, 0.0
+                    wing_lift_true, wing_drag_true = 0.0, 0.0
+                    for i in range(xy_3d.shape[0]):
                         segment_forces_pred, total_force_pred = \
-                                    calculate_airfoil_forces(points, p_3d_pred.squeeze())
+                                    calculate_airfoil_forces(xy_3d[i, ...], p_3d_pred[i,...].squeeze(), alpha=np.deg2rad(2.5))
                         segment_forces_true, total_force_true = \
-                                    calculate_airfoil_forces(points, p_3d_true.squeeze())
+                                    calculate_airfoil_forces(xy_3d[i, ...], p_3d_true[i,...].squeeze(), alpha=np.deg2rad(2.5))
+
+                        wing_lift_pred += total_force_pred[1]/xy_3d.shape[0]
+                        wing_drag_pred += total_force_pred[0]/xy_3d.shape[0]
+                        wing_lift_true += total_force_true[1]/xy_3d.shape[0]
+                        wing_drag_true += total_force_true[0]/xy_3d.shape[0]
 
                         # Print results
-                        print(f"Total force pred: Fx = {total_force_pred[0]:.2f}, Fy = {total_force_pred[1]:.2f}")
-                        print(f"Total force true: Fx = {total_force_true[0]:.2f}, Fy = {total_force_true[1]:.2f}\n")
-                    sys.exit('DEBUG')
+                        #print(f"Total force pred: Fx = {total_force_pred[0]:.2f}, Fy = {total_force_pred[1]:.2f}")
+                        #print(f"Total force true: Fx = {total_force_true[0]:.2f}, Fy = {total_force_true[1]:.2f}\n")
+                    cl_pe = (wing_lift_true-wing_lift_pred)/wing_lift_true*100
+                    cd_pe = (wing_drag_true-wing_drag_pred)/wing_drag_true*100
 
-                    #for lp, lt in zip(lift_coefficients_pred, lift_coefficients_true):
-                    #    print(f'{lp:.3e}  {lt:.3e}')
-                    total_lift_pred, total_lift_true = np.sum(lift_coefficients_pred)/2.5, np.sum(lift_coefficients_true)/2.5
-                    total_drag_pred, total_drag_true = np.sum(drag_coefficients_pred)/2.5, np.sum(drag_coefficients_true)/2.5
-                    lift_pe = (total_lift_true - total_lift_pred)/total_lift_true*100
-                    drag_pe = (total_drag_true - total_lift_pred)/total_drag_true*100
+                    print(f'Case ID: {case_id:>4}')
+                    print(f"Wing Pred: Cl = {wing_lift_pred:.2f}, Cd = {wing_drag_pred:.2f}")
+                    print(f"Wing True: Cl = {wing_lift_true:.2f}, Cd = {wing_drag_true:.2f}")
+                    print(f'Case ID: {case_id:>4}, MSE Error: {np.linalg.norm(p_3d_pred-p_3d_true):.2e}, Lift PE: {cl_pe: .2f}, Drag PE: {cd_pe: .2f}\n\n')
 
-                    true_lifts.append(total_lift_true)
-                    true_drags.append(total_drag_true)
-                    pred_lifts.append(total_lift_pred)
-                    pred_drags.append(total_drag_pred)
+                    true_lift.append(wing_lift_true)
+                    pred_lift.append(wing_lift_pred)
+                    true_drag.append(wing_drag_true)
+                    pred_drag.append(wing_drag_pred)
+            
 
-                    print(f'Case ID: {case_id:>4}, MSE Error: {np.linalg.norm(p_3d_pred-p_3d_true):.2e}, Lift PE: {lift_pe: .2e}, Drag PE: {drag_pe: .2e}')
-                    '''
-
-            '''
-            fig, axs = plt.subplots(figsize=(20,10), tight_layout=True)
-            axs[0].scatter(true_lifts, pred_lifts)
-            axs[1].scatter(true_drags, pred_drags)
-            axs[0].plot(np.linspace(-.5, 2.), np.linspace(-.5, 2.), c='k')
-            axs[0].plot(np.linspace(-.5, 2.), np.linspace(-.5, 2.), c='k')
+            fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(20,10), tight_layout=True)
+            axs[0].scatter(true_lift, pred_lift)
+            axs[1].scatter(true_drag, pred_drag)
+            axs[0].plot(np.linspace(np.min(true_lift), np.max(true_lift)), np.linspace(np.min(true_lift), np.max(true_lift)), c='k')
+            axs[1].plot(np.linspace(np.min(true_drag), np.max(true_drag)), np.linspace(np.min(true_drag), np.max(true_drag)), c='k')
             plt.savefig('lift_drag_parity.png')
 
-            corr_lift, _ = stats.pearsonr(true_lifts, pred_lifts)
-            corr_drag, _ = stats.pearsonr(true_drags, pred_drags)
+            corr_lift, _ = stats.pearsonr(true_lift, pred_lift)
+            corr_drag, _ = stats.pearsonr(true_drag, pred_drag)
 
             print(f'Correlation Lift: {corr_lift: .2e}')
             print(f'Correlation Drag: {corr_drag: .2e}')
-            '''
