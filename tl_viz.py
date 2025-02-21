@@ -4,6 +4,46 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from tl_model import AirfoilTransformerModel
 from tl_data import create_dataloaders, AirfoilDataScaler
+from matplotlib import pyplot as plt
+from matplotlib.gridspec import GridSpec
+import matplotlib.colors as colors
+from matplotlib.cm import ScalarMappable
+
+def generate_colors_from_zcoords(z_coords, cmap_name='viridis', alpha=1.0):
+    """
+    Generates colors based on z-coordinate values using a specified colormap.
+    
+    Args:
+        z_coords: Array of z-coordinate values
+        cmap_name: Name of the colormap to use (default: 'viridis')
+        alpha: Transparency value between 0 and 1 (default: 1.0)
+        
+    Returns:
+        colors_array: Array of RGBA colors corresponding to z_coords
+        norm: Normalization object used for colorbar creation
+        cmap: Colormap object for reference
+    """
+    # Normalize z-coordinates
+    z_min, z_max = np.min(z_coords), np.max(z_coords)
+    norm = colors.Normalize(vmin=z_min, vmax=z_max)
+    
+    # Create colormap
+    cmap = plt.get_cmap(cmap_name)
+    
+    # Map z-coordinates to colors
+    mapper = ScalarMappable(norm=norm, cmap=cmap)
+    colors_array = mapper.to_rgba(z_coords, alpha=alpha)
+    
+    return colors_array, norm, cmap
+
+# Example for creating a colorbar separately:
+def add_zcoord_colorbar(fig, ax, norm, cmap, label='Z-Coordinate'):
+    """Adds a colorbar based on z-coordinate normalization"""
+    sm = ScalarMappable(norm=norm, cmap=cmap)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax)
+    cbar.set_label(label)
+    return cbar
 
 def visualize_predictions(model, dataloader, scaler, device, num_samples=1, save_path='predictions'):
     """
@@ -117,108 +157,69 @@ def visualize_predictions(model, dataloader, scaler, device, num_samples=1, save
             plt.savefig(f'{save_path}/case_{case_ids[i].item()}_z_{z_coord[i].item():.3f}.png')
             plt.close()
 
-'''
-def evaluate_model_performance(model, dataloader, scaler, device):
+def plot_3d_wing_predictions(xy_2d, xy_3d, p_2d, p_3d_true, p_3d_pred, z_coord, case_data, fname):
     """
-    Evaluate model performance metrics
+    Visualize 3D wing pressure predictions against ground truth
     
     Args:
-        model: Trained AirfoilTransformerModel
-        dataloader: DataLoader containing test data
-        scaler: Fitted AirfoilDataScaler
-        device: torch device
-    
-    Returns:
-        dict: Dictionary containing performance metrics
+        xy_2d: array of 2D airfoil coordinates [Nsection, Nspline, 2]
+        xy_3d: array of 3D cross-section coordinates [Nsection, Nspline, 2]
+        p_2d: array of 2D airfoil pressures [Nsection, Nspline]
+        p_3d_true: array of ground truth 3D cross-section pressures [Nsection, Nspline]
+        p_3d_preds: array of predicted 3D cross-section pressures [Nsection, Nspline]
+        z_coord: array of z-coordinate of the cross-section [Nsection]
+        case_data: Dictionary of case ID, Mach number, and Reynolds number
+        fname: string of figure save location
     """
-    model.eval()
-    total_mse = 0
-    total_mae = 0
-    pressure_errors = []
-    
-    with torch.no_grad():
-        for batch in dataloader:
-            # Move data to device
-            airfoil_2d = batch['airfoil_2d'].to(device)
-            geometry_3d = batch['geometry_3d'].to(device)
-            pressure_3d_true = batch['pressure_3d'].to(device)
-            mach = batch['mach'].to(device)
-            reynolds = batch['reynolds'].to(device)
-            z_coord = batch['z_coord'].to(device)
-            
-            # Scale reynolds number
-            reynolds = (reynolds - scaler.scalers['reynolds']['mean']) / scaler.scalers['reynolds']['std']
-            
-            # Get predictions
-            pressure_3d_pred = model(airfoil_2d, geometry_3d, mach, reynolds, z_coord)
-            
-            # Inverse transform predictions and true values
-            batch_pred = {'pressure_3d': pressure_3d_pred}
-            batch_true = {'pressure_3d': pressure_3d_true}
-            
-            unscaled_pred = scaler.inverse_transform(batch_pred)
-            unscaled_true = scaler.inverse_transform(batch_true)
-            
-            # Calculate errors
-            mse = torch.nn.functional.mse_loss(unscaled_pred['pressure_3d'], 
-                                             unscaled_true['pressure_3d'])
-            mae = torch.nn.functional.l1_loss(unscaled_pred['pressure_3d'], 
-                                            unscaled_true['pressure_3d'])
-            
-            total_mse += mse.item()
-            total_mae += mae.item()
-            
-            # Collect all errors for distribution analysis
-            errors = (unscaled_pred['pressure_3d'] - unscaled_true['pressure_3d']).cpu().numpy()
-            pressure_errors.extend(errors.flatten())
-    
-    # Calculate average metrics
-    avg_mse = total_mse / len(dataloader)
-    avg_mae = total_mae / len(dataloader)
-    rmse = np.sqrt(avg_mse)
-    
-    # Calculate error distribution statistics
-    error_std = np.std(pressure_errors)
-    error_percentiles = np.percentile(pressure_errors, [25, 50, 75])
-    
-    return {
-        'rmse': rmse,
-        'mae': avg_mae,
-        'error_std': error_std,
-        'error_percentiles': error_percentiles
-    }
+    # Visualize
+    fig = plt.figure(figsize=(20, 10))
+    gs = GridSpec(1, 2, figure=fig)
 
-# Usage example:
-if __name__ == "__main__":
-    # Load your trained model
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    config = ModelConfig()  # Your model configuration
-    model = AirfoilTransformerModel(config).to(device)
-    model.load_state_dict(torch.load('trained_model.pt'))
+    # Create colorbar
+    colors_array, norm, cmap = generate_colors_from_zcoords(z_coord, cmap_name='RdBu_r', alpha=1.0)
     
-    # Create dataloaders
-    # Create dataloaders
-    data_path = 'data'
-    dataloaders = create_dataloaders(data_path, batch_size=32)
+    # 1. Geometric Configuration (2D & 3D)
+    ax_geo = fig.add_subplot(gs[0])
+    
+    ax_geo.plot(xy_2d[0,:, 0], xy_2d[0,:,1], c='k', alpha=0.6)
+    ax_geo.set_title(f'Wing Cross-Section Geometry', fontsize=22)
+    ax_geo.set_aspect('equal')
+    ax_geo.grid(True)
+    
+    # 2. Pressure Distribution
+    ax_press = fig.add_subplot(gs[1])
 
-    print(model)
-    sys.exit('DEBUG')
-    
-    # Load scaler
-    scaler = AirfoilDataScaler()
-    scaler.load('airfoil_scaler.pt')
+    ax_press.plot(xy_2d[0,:, 0], p_2d[0,:], c='k', linestyle=':', label='2D Pressure', alpha=0.6)
 
-    print(model)
-    sys.exit('DEBUG')
+    for i in range(p_3d_pred.shape[0]):
+        if i==0:
+            ax_press.plot(xy_3d[i,:,0], p_3d_true[i,:], c=colors_array[i], label='3D True', alpha=0.8)
+            ax_press.plot(xy_3d[i,:,0], p_3d_pred[i,:], c=colors_array[i], linestyle='-.', label='3D Predicted', alpha=0.8)
+        else:
+            ax_press.plot(xy_3d[i,:,0], p_3d_true[i,:], c=colors_array[i], alpha=0.8)
+            ax_press.plot(xy_3d[i,:,0], p_3d_pred[i,:], c=colors_array[i], linestyle='-.', alpha=0.8)
+
+    # Create ScalarMappable for colorbar
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+
+    # Add colorbar
+    cbar = fig.colorbar(sm, ax=ax_press)
+    cbar.set_label('Z-Coordinate', fontsize=22)
+    cbar.ax.tick_params(labelsize=20)
+
+    ax_press.set_title('Pressure Distribution', fontsize=22)
+    ax_press.legend(fontsize=22)
+    ax_press.grid(True)
     
-    # Visualize predictions
-    visualize_predictions(model, dataloaders['train'], scaler, device)
+    # Add case information
+    fig.suptitle(f"Case ID: {case_data['case_id']}\n" + 
+                f"Mach: {case_data['mach']:.3f}, " +
+                f"Reynolds: {case_data['reynolds']:.3e}",
+                fontsize=24)
     
-    # Evaluate performance
-    metrics = evaluate_model_performance(model, dataloaders['test'], scaler, device)
-    print("\nModel Performance Metrics:")
-    print(f"RMSE: {metrics['rmse']:.6f}")
-    print(f"MAE: {metrics['mae']:.6f}")
-    print(f"Error Std: {metrics['error_std']:.6f}")
-    print(f"Error Percentiles (25, 50, 75): {metrics['error_percentiles']}")
-'''
+    plt.tight_layout()
+    plt.savefig(fname)
+    plt.close()
+
+    return None
