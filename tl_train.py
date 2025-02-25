@@ -196,8 +196,11 @@ class ModelTrainer:
 
 def train_model(config_path: str):
     """Main training function"""
-    # Load configuration
-    config = TrainingConfig.load(config_path)
+    # Load configuration from command line (with optional YAML base)
+    config = TrainingConfig.from_args()
+
+    print(config)
+    sys.exit('DEBUG')
     experiment = ExperimentManager(config)
     
     # Set device
@@ -403,11 +406,6 @@ def train_model(config_path):
 '''
 
 if __name__ == "__main__":
-    # Load config file info
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, required=True, help='Path to config file')
-    args = parser.parse_args()
-    
     # Train model
-    train_model(args.config)
+    train_model()
 
