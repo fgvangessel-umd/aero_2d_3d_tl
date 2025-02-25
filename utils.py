@@ -1,95 +1,74 @@
 import torch
 import numpy as np
 from pathlib import Path
+from typing import Tuple
 
-def calculate_lift_drag_from_pressure(x, y, p, angle_of_attack_degrees=2.5):
+def calculate_airfoil_forces(
+    points: np.ndarray,
+    pressures: np.ndarray,
+    alpha: float = 0.0
+) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Calculate lift and drag coefficients from pressure distribution around airfoil sections.
+    Calculate nodal and total forces on an airfoil given discrete points and pressure values.
     
-    Parameters:
+    Parameters
     ----------
-    x : numpy.ndarray
-        Array of x-coordinates with shape [n_sections, n_points]
-    y : numpy.ndarray
-        Array of y-coordinates with shape [n_sections, n_points]
-    p : numpy.ndarray
-        Array of pressure values with shape [n_sections, n_points]
-    angle_of_attack_degrees : float
-        Angle of attack in degrees (default: 2.5)
+    points : np.ndarray
+        Nx2 array of (x,y) coordinates along the airfoil surface
+    pressures : np.ndarray
+        Length N array of pressure values at each point
+    alpha : float
+        Angle of attack of airfoil
         
-    Returns:
+    Returns
     -------
-    tuple
-        (lift_coefficients, drag_coefficients, section_forces)
+    nodal_forces : np.ndarray
+        Nx2 array of force vectors at each node
+    total_force : np.ndarray
+        2-element array containing the total force vector [Fx, Fy]
+        
+    Notes
+    -----
+    Forces are calculated using a piecewise linear approximation between points.
+    The direction of the force is determined by the local normal vector.
     """
-    # Convert angle of attack to radians
-    angle_of_attack = np.radians(angle_of_attack_degrees)
     
-    # Get dimensions
-    n_sections = x.shape[0]
-    n_points = x.shape[1]
+    # Input validation
+    if points.shape[0] != pressures.shape[0]:
+        raise ValueError("Number of points must match number of pressure values")
+    if points.shape[1] != 2:
+        raise ValueError("Points must be 2D coordinates")
+        
+    N = points.shape[0]
     
-    # Initialize result arrays
-    lift_coefficients = np.zeros(n_sections)
-    drag_coefficients = np.zeros(n_sections)
-    section_forces = []
+    # Calculate vectors between adjacent points
+    # Use periodic boundary for last point
+    delta_points = np.roll(points, -1, axis=0) - points
     
-    # Process each cross-section
-    for i in range(n_sections):
-        # Get coordinates and pressure for this section
-        x_section = x[i]
-        y_section = y[i]
-        p_section = p[i]
-        
-        # Calculate the surface normal vectors
-        # We need to arrange points in counterclockwise order around the airfoil
-        # This assumes points are already ordered properly around the airfoil
-        dx = np.zeros_like(x_section)
-        dy = np.zeros_like(y_section)
-        
-        # Calculate differentials using central differencing with periodic boundary
-        dx[1:-1] = 0.5 * (x_section[2:] - x_section[:-2])
-        dy[1:-1] = 0.5 * (y_section[2:] - y_section[:-2])
-        
-        # Handle endpoints (assuming closed curve)
-        dx[0] = 0.5 * (x_section[1] - x_section[-1])
-        dy[0] = 0.5 * (y_section[1] - y_section[-1])
-        dx[-1] = 0.5 * (x_section[0] - x_section[-2])
-        dy[-1] = 0.5 * (y_section[0] - y_section[-2])
-        
-        # Normal vectors (outward pointing for negative pressure)
-        # Reversing dx and dy and maintaining sign gives the outward normal
-        nx = -dy
-        ny = dx
-        
-        # Normalize normal vectors
-        norm = np.sqrt(nx**2 + ny**2)
-        nx = nx / norm
-        ny = ny / norm
-        
-        # Force components in x and y directions (pressure × normal × element length)
-        element_length = norm
-        fx = p_section * nx * element_length
-        fy = p_section * ny * element_length
-        
-        # Sum forces to get section coefficients in airfoil coordinates
-        section_force_x = np.sum(fx)
-        section_force_y = np.sum(fy)
-        
-        # Transform to lift and drag using angle of attack
-        # Lift is perpendicular to free stream, drag is parallel
-        lift = -section_force_x * np.sin(angle_of_attack) + section_force_y * np.cos(angle_of_attack)
-        drag = section_force_x * np.cos(angle_of_attack) + section_force_y * np.sin(angle_of_attack)
-        
-        # Store results
-        lift_coefficients[i] = lift
-        drag_coefficients[i] = drag
-        section_forces.append({
-            'x_force': section_force_x,
-            'y_force': section_force_y,
-            'lift': lift,
-            'drag': drag
-        })
+    # Calculate length of each segment
+    segment_lengths = np.sqrt(np.sum(delta_points**2, axis=1))
+
+    # Calculate normal vectors (rotate tangent vector 90 degrees counterclockwise)
+    normal_vectors = np.zeros_like(points)
+    normal_vectors[:, 0] = -delta_points[:, 1] / segment_lengths  # Fixed broadcasting
+    normal_vectors[:, 1] = delta_points[:, 0] / segment_lengths   # Fixed broadcasting
+    
+    # Calculate average pressure for each segment
+    # Average between current and next point
+    segment_pressures = 0.5 * (pressures + np.roll(pressures, -1))
+    
+    # Calculate segment forces
+    # Force = pressure * length * normal_vector
+    segment_forces = normal_vectors * segment_pressures[:, np.newaxis] * segment_lengths[:, np.newaxis]
+
+    # Define rotation array to transform from airfoil affixed coordinate system into free-stream coordinate system
+    R = np.array([[np.cos(alpha), np.sin(alpha)], [-np.sin(alpha), np.cos(alpha)]])
+    segment_forces = segment_forces @ R.T
+    
+    # Calculate total force by summing all segment forces
+    total_force = np.sum(segment_forces, axis=0)
+    
+    return segment_forces, total_force
 
 def select_batches(tensor, batch_indices):
     """
@@ -110,6 +89,39 @@ def select_batches(tensor, batch_indices):
     selected_batches = tensor[batch_indices]
     
     return selected_batches
+
+def select_case(batch, true_reynolds, case_id, device):
+    """
+    Takes a min-batch of aero data and returns subset of data consistenting to a single case 
+    (unique combination of geometry, mach number, and reynolds number)
+
+    batch: dictionary of numpy arrays. The first index of these arrays is the batch index, indexing each cross section
+    case_id: integer ID of case to isolate and return
+    """
+    # Move data to device
+    airfoil_2d = batch['airfoil_2d'].to(device)
+    geometry_3d = batch['geometry_3d'].to(device)
+    pressure_3d = batch['pressure_3d'].to(device)
+    mach = batch['mach'].to(device)
+    reynolds = batch['reynolds'].to(device)
+    z_coord = batch['z_coord'].to(device)
+    cases = batch['case_id'].numpy().tolist()
+
+    # Select data corresponding to a single wing
+    idxs = [i for i, x in enumerate(cases) if x == case_id]
+    try:
+        airfoil_2d = select_batches(airfoil_2d, idxs)
+        geometry_3d = select_batches(geometry_3d, idxs)
+        pressure_3d = select_batches(pressure_3d, idxs)
+        mach = select_batches(mach, idxs)
+        reynolds = select_batches(reynolds, idxs)
+        true_reynolds = select_batches(true_reynolds, idxs)
+        z_coord = select_batches(z_coord, idxs)
+    except IndexError:
+        sys.exit("Requested Case does not exist in batch")
+
+    return airfoil_2d, geometry_3d, pressure_3d, mach, reynolds, true_reynolds, z_coord
+
 
 def load_checkpoint(checkpoint_path, model, optimizer, scaler):
     """

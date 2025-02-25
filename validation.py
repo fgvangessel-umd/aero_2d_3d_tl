@@ -5,7 +5,9 @@ from dataclasses import dataclass
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from sklearn.metrics import r2_score
+from utils import calculate_airfoil_forces
 import wandb
+import sys
 
 @dataclass
 class ValidationMetrics:
@@ -324,3 +326,50 @@ class ModelValidator:
                 f.write(report)
         
         return report
+
+    def compute_force_metrics(
+        self,
+        pred_pressure: torch.Tensor,
+        true_pressure: torch.Tensor,
+        geometry: torch.Tensor,
+        alpha: float = 2.5
+    ) -> Dict[str, float]:
+        """
+        Compute lift and drag metrics from pressure predictions
+        
+        Returns:
+            Dictionary containing lift/drag metrics
+        """
+        # Convert tensors to numpy arrays
+        pred_p = pred_pressure.cpu().numpy()
+        true_p = true_pressure.cpu().numpy()
+        xy = geometry.cpu().numpy()
+        nsections = xy.shape[0]
+        
+        # Calculate forces for each airfoil section
+        pred_section_lifts, pred_section_drags = np.zeros(nsections), np.zeros(nsections)
+        true_section_lifts, true_section_drags = np.zeros(nsections), np.zeros(nsections)
+        
+        for i in range(xy.shape[0]):
+            _, pred_force = calculate_airfoil_forces(xy[i], pred_p[i].squeeze(), alpha=np.deg2rad(alpha))
+            _, true_force = calculate_airfoil_forces(xy[i], true_p[i].squeeze(), alpha=np.deg2rad(alpha))
+            
+            pred_section_lifts[i] = pred_force[1]  # Lift is y-component
+            pred_section_drags[i] = pred_force[0]  # Drag is x-component
+            true_section_lifts[i] = true_force[1]
+            true_section_drags[i] = true_force[0]
+        
+        # Calculate total lifts and drags for entire wing
+        pred_wing_lift, pred_wing_drag = np.sum(pred_section_lifts), np.sum(pred_section_drags)
+        true_wing_lift, true_wing_drag = np.sum(true_section_lifts), np.sum(true_section_drags)
+        
+        return {
+            'true_section_lifts': true_section_lifts,
+            'pred_section_lifts': pred_section_lifts,
+            'true_section_drags': true_section_drags,
+            'pred_section_drags': pred_section_drags,
+            'true_wing_lift': true_wing_lift,
+            'pred_wing_lift': pred_wing_lift,
+            'true_wing_drag': true_wing_drag,
+            'pred_wing_drag': pred_wing_drag
+        }

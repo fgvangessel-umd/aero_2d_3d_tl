@@ -1,11 +1,9 @@
 import torch
-from torch.utils.data import DataLoader
 from tl_model import AirfoilTransformerModel
 from tl_data import create_dataloaders, AirfoilDataScaler
 from experiment import ExperimentManager
-from validation import ModelValidator, ValidationMetrics
 from tl_viz import plot_3d_wing_predictions
-from utils import select_batches, load_checkpoint
+from utils import load_checkpoint, calculate_airfoil_forces, select_case
 from config import TrainingConfig
 from typing import Dict, Optional
 import argparse
@@ -14,73 +12,7 @@ from scipy import stats
 from typing import Tuple
 import sys
 from matplotlib import pyplot as plt
-
-def calculate_airfoil_forces(
-    points: np.ndarray,
-    pressures: np.ndarray,
-    alpha: float = 0.0
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Calculate nodal and total forces on an airfoil given discrete points and pressure values.
-    
-    Parameters
-    ----------
-    points : np.ndarray
-        Nx2 array of (x,y) coordinates along the airfoil surface
-    pressures : np.ndarray
-        Length N array of pressure values at each point
-    alpha : float
-        Angle of attack of airfoil
-        
-    Returns
-    -------
-    nodal_forces : np.ndarray
-        Nx2 array of force vectors at each node
-    total_force : np.ndarray
-        2-element array containing the total force vector [Fx, Fy]
-        
-    Notes
-    -----
-    Forces are calculated using a piecewise linear approximation between points.
-    The direction of the force is determined by the local normal vector.
-    """
-    
-    # Input validation
-    if points.shape[0] != pressures.shape[0]:
-        raise ValueError("Number of points must match number of pressure values")
-    if points.shape[1] != 2:
-        raise ValueError("Points must be 2D coordinates")
-        
-    N = points.shape[0]
-    
-    # Calculate vectors between adjacent points
-    # Use periodic boundary for last point
-    delta_points = np.roll(points, -1, axis=0) - points
-    
-    # Calculate length of each segment
-    segment_lengths = np.sqrt(np.sum(delta_points**2, axis=1))
-
-    # Calculate normal vectors (rotate tangent vector 90 degrees counterclockwise)
-    normal_vectors = np.zeros_like(points)
-    normal_vectors[:, 0] = -delta_points[:, 1] / segment_lengths  # Fixed broadcasting
-    normal_vectors[:, 1] = delta_points[:, 0] / segment_lengths   # Fixed broadcasting
-    
-    # Calculate average pressure for each segment
-    # Average between current and next point
-    segment_pressures = 0.5 * (pressures + np.roll(pressures, -1))
-    
-    # Calculate segment forces
-    # Force = pressure * length * normal_vector
-    segment_forces = normal_vectors * segment_pressures[:, np.newaxis] * segment_lengths[:, np.newaxis]
-
-    # Define rotation array to transform from airfoil affixed coordinate system into free-stream coordinate system
-    R = np.array([[np.cos(alpha), np.sin(alpha)], [-np.sin(alpha), np.cos(alpha)]])
-    segment_forces = segment_forces @ R.T
-    
-    # Calculate total force by summing all segment forces
-    total_force = np.sum(segment_forces, axis=0)
-    
-    return segment_forces, total_force
+from validation import ModelValidator
 
 if __name__ == "__main__":
     """Main testing function"""
@@ -121,6 +53,15 @@ if __name__ == "__main__":
     # Load checkpointed model
     model, optimizer, scaler, epoch, metrics = load_checkpoint(checkpoint_path, model, optimizer, scaler)
 
+    # Initialize validator
+    validator = ModelValidator(
+        model=model,
+        criterion=criterion,
+        device=device,
+        scaler=scaler,
+        log_to_wandb=False
+    )
+
     model.eval()
 
     with torch.no_grad():
@@ -151,31 +92,10 @@ if __name__ == "__main__":
                 for batch_idx, batch in enumerate(dataloaders[split]):
                 
                     true_reynolds = batch['reynolds'].to(device)
-                    # Scale batch if scaler is provided
                     batch = scaler.transform(batch)
-
                         
-                    # Move data to device
-                    airfoil_2d = batch['airfoil_2d'].to(device)
-                    geometry_3d = batch['geometry_3d'].to(device)
-                    pressure_3d = batch['pressure_3d'].to(device)
-                    mach = batch['mach'].to(device)
-                    reynolds = batch['reynolds'].to(device)
-                    z_coord = batch['z_coord'].to(device)
-                    cases = batch['case_id'].numpy().tolist()
-
-                    # Select data corresponding to a single wing
-                    idxs = [i for i, x in enumerate(cases) if x == case_id]
-                    try:
-                        airfoil_2d = select_batches(airfoil_2d, idxs)
-                        geometry_3d = select_batches(geometry_3d, idxs)
-                        pressure_3d = select_batches(pressure_3d, idxs)
-                        mach = select_batches(mach, idxs)
-                        reynolds = select_batches(reynolds, idxs)
-                        true_reynolds = select_batches(true_reynolds, idxs)
-                        z_coord = select_batches(z_coord, idxs)
-                    except IndexError:
-                        continue
+                    airfoil_2d, geometry_3d, pressure_3d, mach, reynolds, true_reynolds, z_coord = \
+                        select_case(batch, true_reynolds, case_id, device)
                     
                     # Make model predictions
                     predictions = model(
@@ -198,6 +118,11 @@ if __name__ == "__main__":
 
                     plot_3d_wing_predictions(xy_2d, xy_3d, p_2d, p_3d_true, p_3d_pred, z_coord, case_data, fname)
                     
+                    '''
+                    print(pressure_3d.size())
+                    print(predictions.size())
+                    print(geometry_3d[:,:,1:3].size())
+                    
                     # Calculate forces
                     wing_lift_pred, wing_drag_pred = 0.0, 0.0
                     wing_lift_true, wing_drag_true = 0.0, 0.0
@@ -207,26 +132,30 @@ if __name__ == "__main__":
                         segment_forces_true, total_force_true = \
                                     calculate_airfoil_forces(xy_3d[i, ...], p_3d_true[i,...].squeeze(), alpha=np.deg2rad(2.5))
 
-                        wing_lift_pred += total_force_pred[1]/xy_3d.shape[0]
-                        wing_drag_pred += total_force_pred[0]/xy_3d.shape[0]
-                        wing_lift_true += total_force_true[1]/xy_3d.shape[0]
-                        wing_drag_true += total_force_true[0]/xy_3d.shape[0]
+                        wing_lift_pred += total_force_pred[1]
+                        wing_drag_pred += total_force_pred[0]
+                        wing_lift_true += total_force_true[1]
+                        wing_drag_true += total_force_true[0]
 
-                        # Print results
-                        #print(f"Total force pred: Fx = {total_force_pred[0]:.2f}, Fy = {total_force_pred[1]:.2f}")
-                        #print(f"Total force true: Fx = {total_force_true[0]:.2f}, Fy = {total_force_true[1]:.2f}\n")
+
                     cl_pe = (wing_lift_true-wing_lift_pred)/wing_lift_true*100
                     cd_pe = (wing_drag_true-wing_drag_pred)/wing_drag_true*100
 
                     print(f'Case ID: {case_id:>4}')
                     print(f"Wing Pred: Cl = {wing_lift_pred:.2f}, Cd = {wing_drag_pred:.2f}")
                     print(f"Wing True: Cl = {wing_lift_true:.2f}, Cd = {wing_drag_true:.2f}")
-                    print(f'Case ID: {case_id:>4}, MSE Error: {np.linalg.norm(p_3d_pred-p_3d_true):.2e}, Lift PE: {cl_pe: .2f}, Drag PE: {cd_pe: .2f}\n\n')
+                    #print(f'Case ID: {case_id:>4}, MSE Error: {np.linalg.norm(p_3d_pred-p_3d_true):.2e}, Lift PE: {cl_pe: .2f}, Drag PE: {cd_pe: .2f}\n\n')
 
                     true_lift.append(wing_lift_true)
                     pred_lift.append(wing_lift_pred)
                     true_drag.append(wing_drag_true)
                     pred_drag.append(wing_drag_pred)
+                    '''
+
+                    force_metrics = validator.compute_force_metrics(predictions, pressure_3d, geometry_3d[:,:,1:3], alpha=2.5)
+                    print(force_metrics)
+
+                    sys.exit('DEBUG')
             
 
             fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(20,10), tight_layout=True)

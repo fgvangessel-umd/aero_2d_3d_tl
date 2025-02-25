@@ -1,5 +1,4 @@
 # experiment.py
-import wandb
 import torch
 import os
 from pathlib import Path
@@ -12,9 +11,8 @@ from matplotlib.gridspec import GridSpec
 class ExperimentManager:
     def __init__(self, config):
         self.config = config
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.setup_directories()
-        self.setup_wandb()
+        self.timestamp = None
+        self.run = None
         
     def setup_directories(self):
         """Create experiment directory structure"""
@@ -32,6 +30,7 @@ class ExperimentManager:
         
     def setup_wandb(self):
         """Initialize W&B project"""
+        import wandb
         self.run = wandb.init(
             project=self.config.project_name,
             name=f"{self.config.experiment_name}_{self.timestamp}",
