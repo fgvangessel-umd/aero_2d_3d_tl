@@ -9,10 +9,12 @@ from typing import Dict, Optional
 import argparse
 import numpy as np
 from scipy import stats
+from sklearn.metrics import r2_score, mean_absolute_percentage_error, mean_absolute_error
 from typing import Tuple
 import sys
 from matplotlib import pyplot as plt
 from validation import ModelValidator
+import pickle
 
 if __name__ == "__main__":
     """Main testing function"""
@@ -28,7 +30,7 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Create dataloaders
-    data_path = 'data_mach'
+    data_path = 'data/data_standard'
     dataloaders = create_dataloaders(
         data_path,
         batch_size=10000,
@@ -48,7 +50,7 @@ if __name__ == "__main__":
     criterion = torch.nn.MSELoss()
 
     # Set checkpoint path
-    checkpoint_path = 'experiments/baseline_transformer_mach_20250218_152538/models/checkpoint_epoch_605.pt'
+    checkpoint_path = 'experiments/baseline_transformer_standard_20250218_091213/models/checkpoint_epoch_917.pt'
 
     # Load checkpointed model
     model, optimizer, scaler, epoch, metrics = load_checkpoint(checkpoint_path, model, optimizer, scaler)
@@ -85,9 +87,7 @@ if __name__ == "__main__":
         pred_drag = []
 
         # Load data
-        for split in ['test']:
-            pred_lifts, pred_drags = [], []
-            true_lifts, true_drags = [], []
+        for split in ['val', 'test']:
             for case_id in case_ids[split]:
                 for batch_idx, batch in enumerate(dataloaders[split]):
                 
@@ -118,55 +118,52 @@ if __name__ == "__main__":
 
                     plot_3d_wing_predictions(xy_2d, xy_3d, p_2d, p_3d_true, p_3d_pred, z_coord, case_data, fname)
                     
-                    '''
-                    print(pressure_3d.size())
-                    print(predictions.size())
-                    print(geometry_3d[:,:,1:3].size())
-                    
-                    # Calculate forces
-                    wing_lift_pred, wing_drag_pred = 0.0, 0.0
-                    wing_lift_true, wing_drag_true = 0.0, 0.0
-                    for i in range(xy_3d.shape[0]):
-                        segment_forces_pred, total_force_pred = \
-                                    calculate_airfoil_forces(xy_3d[i, ...], p_3d_pred[i,...].squeeze(), alpha=np.deg2rad(2.5))
-                        segment_forces_true, total_force_true = \
-                                    calculate_airfoil_forces(xy_3d[i, ...], p_3d_true[i,...].squeeze(), alpha=np.deg2rad(2.5))
-
-                        wing_lift_pred += total_force_pred[1]
-                        wing_drag_pred += total_force_pred[0]
-                        wing_lift_true += total_force_true[1]
-                        wing_drag_true += total_force_true[0]
-
-
-                    cl_pe = (wing_lift_true-wing_lift_pred)/wing_lift_true*100
-                    cd_pe = (wing_drag_true-wing_drag_pred)/wing_drag_true*100
-
-                    print(f'Case ID: {case_id:>4}')
-                    print(f"Wing Pred: Cl = {wing_lift_pred:.2f}, Cd = {wing_drag_pred:.2f}")
-                    print(f"Wing True: Cl = {wing_lift_true:.2f}, Cd = {wing_drag_true:.2f}")
-                    #print(f'Case ID: {case_id:>4}, MSE Error: {np.linalg.norm(p_3d_pred-p_3d_true):.2e}, Lift PE: {cl_pe: .2f}, Drag PE: {cd_pe: .2f}\n\n')
-
-                    true_lift.append(wing_lift_true)
-                    pred_lift.append(wing_lift_pred)
-                    true_drag.append(wing_drag_true)
-                    pred_drag.append(wing_drag_pred)
-                    '''
-
                     force_metrics = validator.compute_force_metrics(predictions, pressure_3d, geometry_3d[:,:,1:3], alpha=2.5)
-                    print(force_metrics)
-
-                    sys.exit('DEBUG')
+                    
+                    true_lift.append(force_metrics['true_wing_lift'])
+                    pred_lift.append(force_metrics['pred_wing_lift'])
+                    true_drag.append(force_metrics['true_wing_drag'])
+                    pred_drag.append(force_metrics['pred_wing_drag'])
             
 
-            fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(20,10), tight_layout=True)
-            axs[0].scatter(true_lift, pred_lift)
-            axs[1].scatter(true_drag, pred_drag)
-            axs[0].plot(np.linspace(np.min(true_lift), np.max(true_lift)), np.linspace(np.min(true_lift), np.max(true_lift)), c='k')
-            axs[1].plot(np.linspace(np.min(true_drag), np.max(true_drag)), np.linspace(np.min(true_drag), np.max(true_drag)), c='k')
-            plt.savefig('lift_drag_parity.png')
+        lift_drag_dict = {
+            'true_lift': true_lift,
+            'true_lift': true_drag,
+            'true_lift': pred_lift,
+            'true_lift': pred_drag
+            }
 
-            corr_lift, _ = stats.pearsonr(true_lift, pred_lift)
-            corr_drag, _ = stats.pearsonr(true_drag, pred_drag)
+        # Save the dictionary to a pickle file
+        with open('lift_drag_dict.pickle', 'wb') as handle:
+            pickle.dump(lift_drag_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-            print(f'Correlation Lift: {corr_lift: .2e}')
-            print(f'Correlation Drag: {corr_drag: .2e}')
+        fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(20,10), tight_layout=True)
+        axs[0].scatter(true_lift, pred_lift)
+        axs[1].scatter(true_drag, pred_drag)
+        axs[0].plot(np.linspace(np.min(true_lift), np.max(true_lift)), np.linspace(np.min(true_lift), np.max(true_lift)), c='k')
+        axs[1].plot(np.linspace(np.min(true_drag), np.max(true_drag)), np.linspace(np.min(true_drag), np.max(true_drag)), c='k')
+        plt.savefig('lift_drag_parity.png')
+
+        corr_lift, _ = stats.pearsonr(true_lift, pred_lift)
+        corr_drag, _ = stats.pearsonr(true_drag, pred_drag)
+
+        r2_lift = r2_score(true_lift, pred_lift)
+        r2_drag = r2_score(true_drag, pred_drag)
+
+        mae_lift = mean_absolute_error(true_lift, pred_lift)
+        mae_drag = mean_absolute_error(true_drag, pred_drag)
+
+        mape_lift = mean_absolute_percentage_error(true_lift, pred_lift)
+        mape_drag = mean_absolute_percentage_error(true_drag, pred_drag)
+
+        print(f'Correlation Lift: {corr_lift: .2e}')
+        print(f'Correlation Drag: {corr_drag: .2e}\n')
+
+        print(f'R2 Lift: {r2_lift: .2e}')
+        print(f'R2 Drag: {r2_drag: .2e}\n')
+
+        print(f'MAE Lift: {mae_lift: .2e}')
+        print(f'MAE Drag: {mae_drag: .2e}\n')
+
+        print(f'MAPE Lift: {mape_lift: .2e}')
+        print(f'MAPE Drag: {mape_drag: .2e}\n')
