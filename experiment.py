@@ -7,6 +7,7 @@ from datetime import datetime
 import json
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+import wandb
 
 class ExperimentManager:
     def __init__(self, config):

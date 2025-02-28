@@ -1,6 +1,6 @@
 import yaml
 from dataclasses import dataclass, asdict
-from dataclasses import dataclass, asdict
+import argparse
 from typing import List, Optional
 from datetime import datetime
 import os
@@ -39,9 +39,6 @@ class TrainingConfig:
 
     # Wandb settings
     notes: str = "Baseline transformer model for transfer learning of 2D to 3D airfoil pressure prediction"
-
-    # Custom dictionary for additional params
-    custom_params: Dict[str, Any] = field(default_factory=dict)
     
     def save(self, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)

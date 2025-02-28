@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Dict, Optional
 import wandb
 import argparse
+from datetime import datetime
+import logging
 
 class ModelTrainer:
     def __init__(
@@ -194,14 +196,23 @@ class ModelTrainer:
                 
         self.logger.info("Training completed")
 
-def train_model(config_path: str):
-    """Main training function"""
+def train_model():
+    """Main training function with improved configuration handling"""
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger("main")
+
     # Load configuration from command line (with optional YAML base)
     config = TrainingConfig.from_args()
 
-    print(config)
-    sys.exit('DEBUG')
+    # Set timestamp and initialize experiment directories and tracking
     experiment = ExperimentManager(config)
+    experiment.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    experiment.setup_directories()
+    experiment.setup_wandb()
     
     # Set device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
