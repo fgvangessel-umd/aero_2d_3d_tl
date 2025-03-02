@@ -25,6 +25,7 @@ class SplineFeatureEmbedding(nn.Module):
 class AirfoilTransformerDecoder(nn.Module):
     def __init__(
         self,
+        enable_transfer_learning,
         d_model=256,
         nhead=8,
         num_decoder_layers=6,
@@ -33,11 +34,20 @@ class AirfoilTransformerDecoder(nn.Module):
     ):
         super().__init__()
         
-        # Embeddings for source (2D) features including pressure
-        self.source_embedding = SplineFeatureEmbedding(d_model, include_pressure=True)
-        # Embeddings for target (3D) geometric features only
-        self.target_embedding = SplineFeatureEmbedding(d_model, include_pressure=False)
-        self.global_embedding = GlobalFeatureEmbedding(d_model)
+        if enable_transfer_learning:
+            # Embeddings for source (2D) features including pressure
+            self.source_embedding = SplineFeatureEmbedding(d_model, include_pressure=True)
+            # Embeddings for target (3D) geometric features only
+            self.target_embedding = SplineFeatureEmbedding(d_model, include_pressure=False)
+            self.global_embedding = GlobalFeatureEmbedding(d_model)
+        elif not enable_transfer_learning:
+            # Embeddings for source (2D) features including pressure
+            self.source_embedding = SplineFeatureEmbedding(d_model, include_pressure=False)
+            # Embeddings for target (3D) geometric features only
+            self.target_embedding = SplineFeatureEmbedding(d_model, include_pressure=False)
+            self.global_embedding = GlobalFeatureEmbedding(d_model)
+        else:
+            sys.exit('Transfer learning type must be explicitly defined')
         
         # Create decoder layer
         decoder_layer = nn.TransformerDecoderLayer(
@@ -96,7 +106,10 @@ class AirfoilTransformerDecoder(nn.Module):
 class AirfoilTransformerModel(nn.Module):
     def __init__(self, config):
         super().__init__()
+        self.enable_transfer_learning = config.enable_transfer_learning
+
         self.decoder = AirfoilTransformerDecoder(
+            enable_transfer_learning = config.enable_transfer_learning,
             d_model=config.d_model,
             nhead=config.n_head,
             num_decoder_layers=config.n_layers,
@@ -114,12 +127,16 @@ class AirfoilTransformerModel(nn.Module):
         src_key_padding_mask=None,
         tgt_key_padding_mask=None
     ):
+        if not self.enable_transfer_learning:
+            # Modify input processing if needed when not using transfer learning
+            # Attend only to geometric features
+            src_spline_features = tgt_spline_features  # Only use geometry, not pressure
         return self.decoder(
             src_spline_features,
             tgt_spline_features,
             mach,
             reynolds,
             z_coord,
-            src_key_padding_mask,
-            tgt_key_padding_mask
+            #src_key_padding_mask,
+            #tgt_key_padding_mask
         )

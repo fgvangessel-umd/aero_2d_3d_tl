@@ -13,6 +13,9 @@ class TrainingConfig:
     n_layers: int = 6
     d_ff: int = 1024
     dropout: float = 0.1
+
+    # Transfer learning parameters
+    enable_transfer_learning: bool = True  # Default to True to maintain current behavior
     
     # Training parameters
     batch_size: int = 64
@@ -68,6 +71,15 @@ class TrainingConfig:
         parser.add_argument('--n_layers', type=int, help='Number of transformer layers')
         parser.add_argument('--d_ff', type=int, help='Feed-forward network dimension')
         parser.add_argument('--dropout', type=float, help='Dropout rate')
+
+        # Transfer Learning params
+        parser.add_argument('--enable_transfer_learning', 
+                           action='store_true', 
+                           help='Enable transfer learning from 2D to 3D')
+        parser.add_argument('--disable_transfer_learning', 
+                           dest='enable_transfer_learning', 
+                           action='store_false',
+                           help='Disable transfer learning and train from scratch')
         
         # Training params
         parser.add_argument('--batch_size', type=int, help='Batch size')
