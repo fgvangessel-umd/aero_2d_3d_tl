@@ -25,6 +25,7 @@ class SplineFeatureEmbedding(nn.Module):
 class AirfoilTransformerDecoder(nn.Module):
     def __init__(
         self,
+        enable_transfer_learning,
         d_model=256,
         nhead=8,
         num_decoder_layers=6,
@@ -33,13 +34,13 @@ class AirfoilTransformerDecoder(nn.Module):
     ):
         super().__init__()
         
-        if self.enable_transfer_learning:
+        if enable_transfer_learning:
             # Embeddings for source (2D) features including pressure
             self.source_embedding = SplineFeatureEmbedding(d_model, include_pressure=True)
             # Embeddings for target (3D) geometric features only
             self.target_embedding = SplineFeatureEmbedding(d_model, include_pressure=False)
             self.global_embedding = GlobalFeatureEmbedding(d_model)
-        elif:
+        elif not enable_transfer_learning:
             # Embeddings for source (2D) features including pressure
             self.source_embedding = SplineFeatureEmbedding(d_model, include_pressure=False)
             # Embeddings for target (3D) geometric features only
@@ -105,7 +106,10 @@ class AirfoilTransformerDecoder(nn.Module):
 class AirfoilTransformerModel(nn.Module):
     def __init__(self, config):
         super().__init__()
+        self.enable_transfer_learning = config.enable_transfer_learning
+
         self.decoder = AirfoilTransformerDecoder(
+            enable_transfer_learning = config.enable_transfer_learning,
             d_model=config.d_model,
             nhead=config.n_head,
             num_decoder_layers=config.n_layers,

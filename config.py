@@ -73,7 +73,13 @@ class TrainingConfig:
         parser.add_argument('--dropout', type=float, help='Dropout rate')
 
         # Transfer Learning params
-        parser.add_argument('--enable_transfer_learning',  type=bool, help='Enable transfer learning from 2D to 3D')
+        parser.add_argument('--enable_transfer_learning', 
+                           action='store_true', 
+                           help='Enable transfer learning from 2D to 3D')
+        parser.add_argument('--disable_transfer_learning', 
+                           dest='enable_transfer_learning', 
+                           action='store_false',
+                           help='Disable transfer learning and train from scratch')
         
         # Training params
         parser.add_argument('--batch_size', type=int, help='Batch size')
