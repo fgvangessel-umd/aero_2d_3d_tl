@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from pathlib import Path
 from typing import Tuple
+import sys
 
 def calculate_airfoil_forces(
     points: np.ndarray,
