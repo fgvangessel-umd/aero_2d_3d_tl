@@ -19,6 +19,13 @@ test_freq: 10 # Test every n epochs
 viz_freq: 1000 # Visualize every n epochs
 device: "auto" # Options: "auto", "cuda", "mps", "cpu"
 
+# Transfer Learning
+enable_transfer_learning: True
+finetune: True
+cross_transfer: False
+pretrain_epochs: 5
+finetune_epochs: 5
+
 # Data parameters
 data_path: data
 num_workers: 1

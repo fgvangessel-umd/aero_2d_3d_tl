@@ -12,6 +12,7 @@ import wandb
 import argparse
 from datetime import datetime
 import logging
+import sys
 
 
 class ModelTrainer:
@@ -78,6 +79,9 @@ class ModelTrainer:
 
             # Update metrics
             total_loss += loss.item()
+
+            ### DEBUG (REMOVE!!!!)
+            sys.exit('DEBUG')
 
             # Log batch progress
             if batch_idx % 10 == 0:
