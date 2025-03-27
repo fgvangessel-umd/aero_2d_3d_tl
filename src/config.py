@@ -29,6 +29,7 @@ class TrainingConfig:
     validation_freq: int = 1  # Validate every epoch
     test_freq: int = 10      # Test every 5 epochs
     viz_freq: int = 10      # Visualize every 5 epochs
+    device: str = "auto"     # Options: "auto", "cuda", "mps", "cpu"
     
     # Data parameters
     data_path: str = 'data'
@@ -89,6 +90,7 @@ class TrainingConfig:
         parser.add_argument('--scheduler_type', type=str, help='Learning rate scheduler type')
         parser.add_argument('--warmup_steps', type=int, help='Warmup steps')
         parser.add_argument('--checkpoint_freq', type=int, help='Checkpoint frequency')
+        parser.add_argument('--device', type=str, help='Device to use (auto, cuda, mps, cpu)')
         
         # Data params
         parser.add_argument('--data_path', type=str, help='Path to data files')
