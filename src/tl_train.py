@@ -120,6 +120,8 @@ class ModelTrainer:
         """Main training loop"""
         best_val_loss = float("inf")
 
+        """Define transfer learning epochs"""
+
         for epoch in range(self.config.num_epochs):
             self.logger.info(f"Starting epoch {epoch}")
 
@@ -183,98 +185,3 @@ class ModelTrainer:
                 )
 
         self.logger.info("Training completed")
-
-
-def train_model():
-    """Main training function with improved configuration handling"""
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-    logger = logging.getLogger("main")
-
-    # Load configuration from command line (with optional YAML base)
-    config = TrainingConfig.from_args()
-
-    # Set timestamp and initialize experiment directories and tracking
-    experiment = ExperimentManager(config)
-    experiment.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    experiment.setup_directories()
-    experiment.setup_wandb()
-
-    # Set device based on configuration and availability
-    if config.device == "auto":
-        if torch.cuda.is_available():
-            device = torch.device("cuda")
-        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            device = torch.device("mps")
-        else:
-            device = torch.device("cpu")
-    else:
-        device = torch.device(config.device)
-
-    logging.info(f"Using device: {device}")
-
-    # Create dataloaders
-    dataloaders = create_dataloaders(
-        config.data_path, batch_size=config.batch_size, num_workers=config.num_workers
-    )
-
-    # Initialize or load scaler
-    scaler = AirfoilDataScaler()
-    scaler.fit(dataloaders["train"])
-
-    # Initialize model and training components
-    model = AirfoilTransformerModel(config).to(device)
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
-    )
-    criterion = torch.nn.MSELoss()
-
-    # Initialize validator
-    validator = ModelValidator(
-        model=model,
-        criterion=criterion,
-        device=device,
-        scaler=scaler,
-        log_to_wandb=True,
-    )
-
-    # Initialize trainer
-    trainer = ModelTrainer(
-        config=config,
-        model=model,
-        optimizer=optimizer,
-        criterion=criterion,
-        dataloaders=dataloaders,
-        device=device,
-        scaler=scaler,
-        experiment=experiment,
-        validator=validator,
-    )
-
-    # Start training
-    trainer.train()
-
-    # Generate visualizations for last epoch (in the future exchange this for loading the best epoch)
-    if experiment:
-        for split in ["train", "val", "test"]:
-            experiment.log_model_predictions(
-                model,
-                split,
-                dataloaders[split],
-                device,
-                config.num_epochs,
-                scaler,
-                None,
-            )
-
-    # Cleanup
-    if experiment:
-        experiment.finish()
-
-
-if __name__ == "__main__":
-    # Train model
-    train_model()
