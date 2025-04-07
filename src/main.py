@@ -1,13 +1,13 @@
 import torch
 from tl_train import ModelTrainer
-from tl_model import AirfoilTransformerModel
+from tl_model import AirfoilTransformerModel, AirfoilTransformerModel_TL_CrossAttention
 from tl_data import create_dataloaders, AirfoilDataScaler
 from experiment import ExperimentManager
 from validation import ModelValidator
 from config import TrainingConfig
 import logging
 from datetime import datetime
-import logging
+import sys
 
 
 def train_model():
@@ -51,7 +51,13 @@ def train_model():
     scaler.fit(dataloaders["train"])
 
     # Initialize model and training components
-    model = AirfoilTransformerModel(config).to(device)
+    if config.enable_transfer_learning:
+        print("Transfer learning enabled")
+        model = AirfoilTransformerModel_TL_CrossAttention(config).to(device)
+    else:
+        print("Transfer learning disabled")
+        model = AirfoilTransformerModel(config).to(device)
+
     optimizer = torch.optim.Adam(
         model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
     )
@@ -81,6 +87,7 @@ def train_model():
 
     # Start training
     trainer.train()
+    sys.exit('DEBUG')
 
     # Generate visualizations for last epoch (in the future exchange this for loading the best epoch)
     if experiment:

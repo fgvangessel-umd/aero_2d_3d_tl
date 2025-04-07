@@ -70,7 +70,10 @@ class ModelTrainer:
 
             # Forward pass
             self.optimizer.zero_grad()
-            predictions = self.model(airfoil_2d, geometry_3d, mach, reynolds, z_coord)
+            if self.config.enable_transfer_learning:
+                predictions = self.model(airfoil_2d, geometry_3d, mach, reynolds, z_coord)
+            else:
+                predictions = self.model(geometry_3d, mach, reynolds, z_coord)
 
             # Compute loss and backward pass
             loss = self.criterion(predictions, pressure_3d)
@@ -79,9 +82,6 @@ class ModelTrainer:
 
             # Update metrics
             total_loss += loss.item()
-
-            ### DEBUG (REMOVE!!!!)
-            sys.exit('DEBUG')
 
             # Log batch progress
             if batch_idx % 10 == 0:
