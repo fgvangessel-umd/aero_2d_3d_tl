@@ -8,6 +8,8 @@ import json
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import wandb
+from tl_data import unpack_batch
+from tl_model import AirfoilTransformerModel_Pretrain_Finetune, PhaseType
 
 class ExperimentManager:
     def __init__(self, config):
@@ -82,36 +84,41 @@ class ExperimentManager:
             batch = scaler.transform(batch)
 
             # Move data to device
-            airfoil_2d = batch['airfoil_2d'].to(device)
-            geometry_3d = batch['geometry_3d'].to(device)
-            pressure_3d_true = batch['pressure_3d'].to(device)
-            mach = batch['mach'].to(device)
-            reynolds = batch['reynolds'].to(device)
-            z_coord = batch['z_coord'].to(device)
+            airfoil_2d, geometry_2d, pressure_2d, geometry_3d, pressure_3d, mach, reynolds, z_coord = \
+                unpack_batch(batch, device)
             case_ids = batch['case_id']
             
-            # Scale batch
-            batch = scaler.transform(batch)
-            
-            # Get model predictions
-            pressure_3d_pred = model(
-                airfoil_2d,
-                geometry_3d,
-                mach,
-                reynolds,
-                z_coord
-            )
+            # Forward pass
+            if isinstance(model, AirfoilTransformerModel_Pretrain_Finetune):
+                # For pretrain-finetune model, determine target based on phase
+                if model.phase == PhaseType.PRETRAIN:
+                    # In pretraining, use 2D airfoil pressure as target
+                    # Note: we use only the pressure channel (last dimension) from airfoil_2d
+                    pressure_target = pressure_2d.unsqueeze(-1)
+                    predictions = model(geometry_2d, mach, reynolds, z_coord)
+                else:  # FINETUNE phase
+                    # In finetuning, use 3D pressure as target
+                    pressure_target = pressure_3d
+                    predictions = model(geometry_3d, mach, reynolds, z_coord)
+            elif self.config.enable_transfer_learning:
+                # Regular transfer learning model
+                pressure_target = pressure_3d
+                predictions = model(airfoil_2d, geometry_3d, mach, reynolds, z_coord)
+            else:
+                # Regular model without transfer learning
+                pressure_target = pressure_3d
+                predictions = model(geometry_3d, mach, reynolds, z_coord)
             
             # Store ground-truth and prediction data
             batch_pred = {
-                'pressure_3d': pressure_3d_pred,
+                'pressure_3d': predictions,
                 'airfoil_2d': airfoil_2d,
                 'geometry_3d': geometry_3d,
                 'mach': mach,
                 'reynolds': reynolds
             }
             batch_true = {
-                'pressure_3d': pressure_3d_true,
+                'pressure_3d': pressure_target,
                 'airfoil_2d': airfoil_2d,
                 'geometry_3d': geometry_3d,
                 'mach': mach,
@@ -187,10 +194,15 @@ class ExperimentManager:
 
         return fig
     
-    def save_checkpoint(self, model, optimizer, epoch, metrics, scaler):
-
-        # Create temporary path for scaler
-        scaler_path = self.model_dir / f"temp_scaler_epoch_{epoch}.pt"
+    def save_checkpoint(self, model, optimizer, epoch, metrics, scaler, checkpoint_name=None):
+        """Save model checkpoint with metadata"""
+        # Use custom checkpoint name if provided, otherwise use default
+        if checkpoint_name:
+            checkpoint_path = self.model_dir / f"{checkpoint_name}.pt"
+            scaler_path = self.model_dir / f"{checkpoint_name}_scaler.pt"
+        else:
+            checkpoint_path = self.model_dir / f"checkpoint_epoch_{epoch}.pt"
+            scaler_path = self.model_dir / f"temp_scaler_epoch_{epoch}.pt"
         
         # Save scaler state
         scaler.save(scaler_path)
@@ -199,7 +211,6 @@ class ExperimentManager:
         with open(scaler_path, 'rb') as f:
             scaler_state = f.read()
 
-        """Save model checkpoint with metadata"""
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
@@ -210,7 +221,6 @@ class ExperimentManager:
         }
         
         # Save locally
-        checkpoint_path = self.model_dir / f"checkpoint_epoch_{epoch}.pt"
         torch.save(checkpoint, checkpoint_path)
         
         # Log to W&B

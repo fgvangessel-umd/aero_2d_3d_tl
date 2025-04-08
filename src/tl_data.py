@@ -353,3 +353,26 @@ class AirfoilDataScaler:
         """Load scaler statistics"""
         self.scalers = torch.load(path)
         return self
+
+def unpack_batch(batch, device):
+    """
+    Unpack batch dictionary into individual tensors
+    
+    Args:
+        batch: Dictionary containing batched data
+        device: Device to move tensors to (e.g., 'cuda' or 'cpu')
+    
+    Returns:
+        Unpacked tensors
+    """
+    # Move data to device
+    airfoil_2d = batch['airfoil_2d'].to(device)
+    geometry_2d = airfoil_2d[:, :, :-1]
+    pressure_2d = airfoil_2d[:, :, -1]
+    geometry_3d = batch['geometry_3d'].to(device)
+    pressure_3d = batch['pressure_3d'].to(device)
+    mach = batch['mach'].to(device)
+    reynolds = batch['reynolds'].to(device)
+    z_coord = batch['z_coord'].to(device)
+    
+    return airfoil_2d, geometry_2d, pressure_2d, geometry_3d, pressure_3d, mach, reynolds, z_coord

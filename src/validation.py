@@ -1,11 +1,14 @@
 import torch
+from torch.utils.data import DataLoader
 import numpy as np
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 import matplotlib.pyplot as plt
-from torch.utils.data import DataLoader
+from config import TrainingConfig
 from sklearn.metrics import r2_score
 from utils import calculate_airfoil_forces
+from tl_data import unpack_batch
+from tl_model import AirfoilTransformerModel_Pretrain_Finetune, PhaseType
 import wandb
 import sys
 
@@ -24,6 +27,7 @@ class ValidationMetrics:
 class ModelValidator:
     def __init__(
         self,
+        config: TrainingConfig,
         model: torch.nn.Module,
         criterion: torch.nn.Module,
         device: torch.device,
@@ -40,6 +44,7 @@ class ModelValidator:
             scaler: Data scaler for normalization
             log_to_wandb: Whether to log results to W&B
         """
+        self.config = config
         self.model = model
         self.criterion = criterion
         self.device = device
@@ -126,24 +131,32 @@ class ModelValidator:
                 batch = self.scaler.transform(batch)
             
             # Move data to device
-            airfoil_2d = batch['airfoil_2d'].to(self.device)
-            geometry_3d = batch['geometry_3d'].to(self.device)
-            pressure_3d = batch['pressure_3d'].to(self.device)
-            mach = batch['mach'].to(self.device)
-            reynolds = batch['reynolds'].to(self.device)
-            z_coord = batch['z_coord'].to(self.device)
+            airfoil_2d, geometry_2d, pressure_2d, geometry_3d, pressure_3d, mach, reynolds, z_coord = \
+                unpack_batch(batch, self.device)
             
             # Forward pass
-            predictions = self.model(
-                airfoil_2d,
-                geometry_3d,
-                mach,
-                reynolds,
-                z_coord
-            )
+            if isinstance(self.model, AirfoilTransformerModel_Pretrain_Finetune):
+                # For pretrain-finetune model, determine target based on phase
+                if self.model.phase == PhaseType.PRETRAIN:
+                    # In pretraining, use 2D airfoil pressure as target
+                    # Note: we use only the pressure channel (last dimension) from airfoil_2d
+                    pressure_target = pressure_2d.unsqueeze(-1)
+                    predictions = self.model(geometry_2d, mach, reynolds, z_coord)
+                else:  # FINETUNE phase
+                    # In finetuning, use 3D pressure as target
+                    pressure_target = pressure_3d
+                    predictions = self.model(geometry_3d, mach, reynolds, z_coord)
+            elif self.config.enable_transfer_learning:
+                # Regular transfer learning model
+                pressure_target = pressure_3d
+                predictions = self.model(airfoil_2d, geometry_3d, mach, reynolds, z_coord)
+            else:
+                # Regular model without transfer learning
+                pressure_target = pressure_3d
+                predictions = self.model(geometry_3d, mach, reynolds, z_coord)
             
             # Compute basic metrics
-            loss = self.criterion(predictions, pressure_3d)
+            loss = self.criterion(predictions, pressure_target)
             mae = torch.nn.functional.l1_loss(predictions, pressure_3d)
             max_error = (predictions - pressure_3d).abs().max()
             

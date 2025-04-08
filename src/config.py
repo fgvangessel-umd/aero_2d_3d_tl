@@ -35,6 +35,7 @@ class TrainingConfig:
     cross_transfer: bool = False
     pretrain_epochs: int = 5
     finetune_epochs: int = 5
+    num_layers_to_freeze: int = 6
 
     # Data parameters
     data_path: str = "data"
@@ -110,6 +111,7 @@ class TrainingConfig:
         parser.add_argument("--cross-transfer", type=bool, help="Turn on/off cross-attention in finetuning stage")
         parser.add_argument("--pretrain_epochs", type=int, help="Number of pretraining epochs")
         parser.add_argument("--finetune_epochs", type=int, help="Number of finetuning epochs")
+        parser.add_argument("--num_layers_to_freeze", type=int, help="Number of layers to freeze during finetuning")
 
 
         # Data params
