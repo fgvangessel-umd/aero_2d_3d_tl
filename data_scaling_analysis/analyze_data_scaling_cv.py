@@ -529,6 +529,42 @@ def main():
         
         plt.tight_layout()
         plt.savefig('force_prediction_mae.png')
+
+        # Create a visualization for MAPE metrics
+        plt.figure(figsize=(15, 8))
+        
+        # Plot MAE for lift
+        plt.subplot(1, 2, 1)
+        plt.errorbar(
+            force_summary_df['train_percent'],
+            force_summary_df['test_mape_lift_mean'],
+            yerr=force_summary_df['test_mape_lift_std'],
+            fmt='o-',
+            capsize=5,
+            color='blue'
+        )
+        plt.xlabel('Training Data Percentage')
+        plt.ylabel('Mean Absolute Percent Error')
+        plt.title('Lift Prediction MAPE')
+        plt.grid(True)
+        
+        # Plot MAE for drag
+        plt.subplot(1, 2, 2)
+        plt.errorbar(
+            force_summary_df['train_percent'],
+            force_summary_df['test_mape_drag_mean'],
+            yerr=force_summary_df['test_mape_drag_std'],
+            fmt='o-',
+            capsize=5,
+            color='red'
+        )
+        plt.xlabel('Training Data Percentage')
+        plt.ylabel('Mean Absolute Percent Error')
+        plt.title('Drag Prediction MAPE')
+        plt.grid(True)
+        
+        plt.tight_layout()
+        plt.savefig('force_prediction_mape.png')
         #print("Force prediction MAE visualization saved to force_prediction_mae.png",
         #        'test_mape_lift_mean': group['test_mape_lift'].mean(),
         #        'test_mape_lift_std': group['test_mape_lift'].std(),
